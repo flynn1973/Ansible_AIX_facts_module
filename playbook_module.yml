@@ -1,0 +1,34 @@
+---
+- name: test
+  hosts: all
+  gather_facts: false
+  tasks:
+    - name: run AIX_facts
+      action: AIX_facts
+
+    - name: echo oslevel
+      debug:
+        var: oslevel
+
+    - name: echo build
+      debug:
+        var: build
+
+    - name: print het werkt als Build = 2010_2 en oslevel = 6100-09-06-1543
+      debug:
+        msg: "Het werkt !"
+      when: build ==  "2010_2"  and oslevel == "6100-09-06-1543"
+
+    - name: print de versie van de Curl
+      debug:
+        var: lpps
+      # with_items: "{{ lpps }}"
+      # when: '"ingcurl" in "{{ item|lower }}" '
+
+    - name: print de filesystemen
+      debug:
+        var: filesystems
+
+    - name: print de mounts
+      debug:
+        var: mounts

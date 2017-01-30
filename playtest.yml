@@ -1,0 +1,17 @@
+---
+- hosts: rn12402.itc.testlab.intranet
+  gather_facts: False
+  tasks:
+    - name: Test de python test module
+      AIX_facts_py:
+
+#    - debug: 
+#        var: oslevel
+#    - debug:
+#        var: build
+#    - debug:
+#        var: lpps
+#    - debug:
+#        var: filesystems
+    - debug:
+        var: vgs
