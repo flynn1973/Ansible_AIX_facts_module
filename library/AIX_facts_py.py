@@ -4,17 +4,166 @@
 # Build by Joris Weijters
 #
 #
-DUCUMENTATION = '''
+DOCUMENTATION = '''
 ---
 module: AIX_facts
 version_added: "0.1"
 short_description:
-    - get AIX facts
-      oslevel
+    This module gathers AIX facts. 
+    It delivers the folowing ansible_facts:
+    oslevel
+    build
+    lpps
+    filesystems
+    mounts
+    vgs
+    lssrc
+    niminfo
+'''
 
+RETURN = '''
+ansible_facts: {
+    "oslevel": {
+        "BUILD_DATE": "1543",
+        "OS_Ver": "61",
+        "SP": "06",
+        "TL": "09",
+        "oslevel-s": "6100-09-06-1543"
+    },
+
+    {
+    "build": "2010_2"
+    },
+    
+    {
+    "lpps": [
+        {
+            "Automatic": "0",
+            "Build_Date": "",
+            "Description": "IBM BigFix Agent",
+            "Destination_Dir.": " ",
+            "EFIX_Locked": "0",
+            "Fileset": "BESClient",
+            "Fix_State": "C",
+            "Install_Path": "/",
+            "Level": "9.5.4.38",
+            "Message_Catalog": " ",
+            "Message_Number": " ",
+            "Message_Set": " ",
+            "PTF_Id": " ",
+            "Package_Name": "BESClient",
+            "Parent": " ",
+            "State": " ",
+            "Type": " ",
+            "Uninstaller": " "
+            },
+    ]
+    },
+
+    {
+    "filesystems": [
+        {
+            "Acct": "no",
+            "AutoMount": "yes",
+            "Device": "/dev/hd4",
+            "MountPoint": "/",
+            "Nodename": "",
+            "Options": "rw",
+            "Size": "524288",
+            "Type": "bootfs",
+            "Vfs": "jfs2"
+        },
+    ],
+    },
+    {
+    "mounts": [
+        {
+            "device": "/dev/hd4",
+            "fstype": "jfs2",
+            "mount": "/",
+            "options": "rw,log=/dev/hd8",
+            "size_available": 172212224,
+            "size_total": 268435456,
+            "time": "Oct 12 15:14"
+         },
+    ],
+    },
+    {
+    "vgs": {
+        "midwarevg": [
+            {
+                "free_pps": "3",
+                "pp_size": "128 megabyte(s)",
+                "pv_name": "hdisk1",
+                "pv_state": "active",
+                "total_pps": "400"
+            }
+        ],
+    ],
+    },
+    {
+    "lssrc": [
+        {
+            "Group": "tcpip",
+            "PID": "4260004",
+            "Status": "active",
+            "Subsystem": "named"
+        },
+    ]
+    },
+
+    {
+    "niminfo": {
+        "NIM_BOS_FORMAT": "rte",
+        "NIM_BOS_IMAGE": "/SPOT/usr/sys/inst.images/installp/ppc/bos",
+        "NIM_CONFIGURATION": "standalone",
+        "NIM_FIPS_MODE": "0",
+        "NIM_HOSTNAME": "rn12402pl.itc.testlab.intranet",
+        "NIM_HOSTS": "127.0.0.1:loopback:localhost  172.27.8.43:rn12402pl.itc.testlab.intranet  172.27.8.18:rn100pgpl.itc.testlab.intranet",
+        "NIM_MASTERID": "00F62C634C00",
+        "NIM_MASTER_HOSTNAME": "rn100pgpl.itc.testlab.intranet",
+        "NIM_MASTER_PORT": "1058",
+        "NIM_MOUNTS": "",
+        "NIM_NAME": "rn12402pl",
+        "NIM_REGISTRATION_PORT": "1059",
+        "NIM_SHELL": "nimsh",
+        "ROUTES": "default:0:172.27.8.1"
+    }
+    }
+}
 
 opions:
   there are no options
+'''
+
+EXAMPLES = '''
+- name: test
+  hosts: all
+  gather_facts: false
+  tasks:
+    - name: run AIX_facts
+      action: AIX_facts_py
+
+    - name: echo oslevel
+      debug:
+        var: oslevel
+      when: oslevel.oslevel_s == "6100-09-06-1543"
+
+    - name: printis It Works ! when  Build == 2010_2 and oslevel.oslevel_s = 6100-09-06-1543
+      debug:
+        msg: "It Works!"
+      when:
+        - build  == "2010_2"
+        - oslevel.oslevel_s  == "6100-09-06-1543"
+
+
+    - name: prints the version of openssl.base
+      debug:
+        var: item.Level
+      with_items: "{{ lpps }}"
+      when:
+        - '"openssl.base" in "{{ item.Fileset|lower }}" '
+
 '''
 
 # import modules needed
@@ -78,12 +227,21 @@ def _get_mount_size_facts(mountpoint):
 
 def get_oslevel(module):
     """
-    get the oslevel functio delivers oslvel -s output
+    get the oslevel function delivers oslvel -s output
+    <OS Ver>-<TL>-<SP>-<BUILD DATE>
+    as wel OV_Version, the tecnology level, TL, the Servicepack, SP and the BUILD_DATE, 
     """
     rc, out, err = module.run_command(["/usr/bin/oslevel", "-s"])
     if rc !=0:
         module.fail_json(msg="could not determine oslevel", rc=rc, err=err) 	
-    return out
+    lijst = {'oslevel_s' : out.strip('\n') }
+    keys=('OS_Ver', 'TL', 'SP', 'BUILD_DATE')
+    values = out.split('-')
+    v_stript = [v.rstrip('0\n') for v in values]
+    adict = dict(itertools.izip(keys,v_stript))
+    lijst.update(adict)
+
+    return lijst
 
 
 def get_build(module):
@@ -97,10 +255,10 @@ def get_build(module):
     copy_file = '/etc/BUILD'
     try: 
         if os.path.exists(org_file):
-            build = open(org_file, 'r').readlines()
+            build = ''.join([line.strip() for line in open(org_file, 'r')])
     except IOError as e:
 	if os.path.exists(copy_file):
-            build = open(copy_file, 'r').readlines()
+            build = ''.join([line.strip() for line in open(copy_file, 'r')])
     except IOError as e:
 	    module.fail_json(msg="could not determine BUILD", rc=rc, err=e)
     return build
@@ -206,6 +364,64 @@ def get_vgs(module):
                         vgs[m.group(1)].append(pv_info)
     return vgs
 
+
+def get_lssrc(module):
+    lijst = []
+    rc, out, err = module.run_command(["/usr/bin/lssrc", "-a"])
+    if rc !=0:
+        module.fail_json(msg="ERROR: Could not complete lssrc ", rc=rc, err=err)
+    firstline = True
+    for line in out.splitlines():
+        if firstline == True:
+            keys = line.split()
+            firstline = False
+        else:
+            # lssrc output is colomn formatted without specific separator, so use exact positions for each field!
+            values = [ line[0:18].strip() , line[18:34].strip() , line[34:48].strip() , line[48:60].strip() ]
+            adict = dict(itertools.izip(keys,values))
+            lijst.append(adict)
+    return lijst
+
+def get_niminfo(module):
+    file = '/etc/niminfo'
+
+    try:
+        if os.path.exists(file):
+	    '''
+	     the niminfo looks like:
+	     #------------------ Network Install Manager ---------------
+	     # warning - this file contains NIM configuration information
+	     #       and should only be updated by NIM
+	     export NIM_NAME=rn12402pl
+	     export NIM_HOSTNAME=rn12402pl.itc.testlab.intranet
+	     export NIM_CONFIGURATION=standalone
+	     export NIM_MASTER_HOSTNAME=rn100pgpl.itc.testlab.intranet
+	     export NIM_MASTER_PORT=1058
+	     export NIM_REGISTRATION_PORT=1059
+	     export NIM_SHELL="nimsh"
+	     export NIM_MASTERID=00F62C634C00
+	     export NIM_FIPS_MODE=0
+	     export NIM_BOS_IMAGE=/SPOT/usr/sys/inst.images/installp/ppc/bos
+	     export NIM_BOS_FORMAT=rte
+	     export NIM_HOSTS=" 127.0.0.1:loopback:localhost  172.27.8.43:rn12402pl.itc.testlab.intranet  172.27.8.18:rn100pgpl.itc.testlab.intranet "
+	     export NIM_MOUNTS=""
+	     export ROUTES=" default:0:172.27.8.1 "
+
+	     The next line will do 3 things
+             It opens the file and removes all lines string with '#' ((l for l in open(file, 'r') if not l.startswith('    #')))
+             it puts the output in line
+	     It splits that line into 2 blocks showing only the second and splits this into 2 block with '=' as separator line.split(' ', 1)[1].split('=')
+             the output is put into k anv v
+	     than it strips k and v and creates a dictionary from these dict((k.strip(), v.strip(' "\n'))
+	    '''
+            niminfo = dict((k.strip(), v.strip(' "\n')) for k, v in (line.split(' ', 1)[1].split('=') for line in ((l for l in open(file, 'r') if not l.startswith('#')))))
+    except IOError as e:
+       module.fail_json(msg="could not read /etc/niminfo", rc=rc, err=e)
+    return niminfo
+
+                
+	    
+
 def main():
     module = AnsibleModule(argument_spec={})
     facts = {}
@@ -215,6 +431,8 @@ def main():
     facts["filesystems"] = get_filesystems(module)
     facts["mounts"] = get_mounts(module)
     facts["vgs"] = get_vgs(module)
+    facts["lssrc"] = get_lssrc(module)
+    facts["niminfo"] = get_niminfo(module)
 
     module.exit_json(changed=False, rc=0, ansible_facts=facts)
 
