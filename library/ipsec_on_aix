@@ -1,0 +1,108 @@
+#!/usr/bin/ksh
+#
+# state: enabled|disabled
+# rules: directory with ipsec rues, defaults to /opt/ING/etc/
+#
+# enabled:
+# /usr/sbin/mkdev -c ipsec -t 4
+# /usr/sbin/mkdev -c ipsec -t 6
+# /usr/sbin/impfilt -f /opt/ING/etc/
+# /usr/sbin/mkfilt -v4 -u -g start
+#
+# disabled:
+# /usr/sbin/rmfilt -v4 -n all
+# /usr/sbin/mkfilt -v4 -d
+#
+#
+$DEBUG
+
+# Possible arguments
+ARGUMENTS="state rules"
+# Possible values for state
+STATES="enabled|disabled"
+
+function custom_set_state {
+$DEBUG
+# $1 should contain target state
+# $2 could contain a directory with ipsec rukes files
+# defaults to /opt/ING/etc/
+# standard output should contain status or
+# if failure contain reason for failure
+# return status is 0 for success and != 0 for failure
+
+  OUTPUT=
+  RC=0
+  if [[ "$1" = "enabled" ]]
+  then
+    CMDOUTPUT=$(/usr/sbin/mkdev -c ipsec -t 4 2>&1) || RC=$((RC+1))
+    OUTPUT="$CMDOUTPUT;$OUTPUT"
+    CMDOUTPUT=$(/usr/sbin/rmfilt -v4 -n all 2>&1) || RC=$((RC+1))
+    OUTPUT="$CMDOUTPUT;$OUTPUT"
+    CMDOUTPUT=$(/usr/sbin/mkfilt -v4 -d 2>&1) || RC=$((RC+1))
+    OUTPUT="$CMDOUTPUT;$OUTPUT"
+    CMDOUTPUT=$(/usr/sbin/impfilt -f $2 2>&1) || RC=$((RC+1))
+    OUTPUT="$CMDOUTPUT;$OUTPUT"
+    CMDOUTPUT=$(/usr/sbin/mkfilt -v4 -u -g start 2>&1) || RC=$((RC+1))
+    OUTPUT="$CMDOUTPUT;$OUTPUT"
+  else
+    CMDOUTPUT=$(/usr/sbin/rmfilt -v4 -n all 2>&1) || RC=$((RC+1))
+    OUTPUT="$CMDOUTPUT;$OUTPUT"
+    CMDOUTPUT=$(/usr/sbin/mkfilt -v4 -d 2>&1) || RC=$((RC+1))
+    OUTPUT="$CMDOUTPUT;$OUTPUT"
+  fi
+  echo $OUTPUT|sed -e 's/^\;//' -e 's/\;$//'
+  return $RC
+}
+
+function set_state {
+$DEBUG
+  if MSG=$(custom_set_state $STATE $RULES)
+  then
+    CHANGED=true
+    CSTATE=$STATE
+  else
+    # failure
+    RC=$?
+    CHANGED=false
+    CSTATE=unknown
+    FAILED=true
+  fi
+}
+ 
+# Defaults
+CHANGED=false
+CSTATE=unknown
+FAILED=false
+MSG=
+RC=0
+
+# Source input from argument file provided by Ansible
+. $1
+
+for ARG in $ARGUMENTS
+do
+  if [[ -z $(eval "echo \$$ARG") ]]; then
+      printf '{"failed": true, "msg": "missing required arguments: %s"}' "$ARG"
+      exit 1
+  fi
+done
+
+# Capitalize...
+STATE="$state"
+RULES="$rules"
+
+# Check input state
+if echo $STATES | grep -q "$STATE"
+then
+  # state is valid, enforce it
+    set_state
+else
+  # invalid state, exit with failure
+  printf '{"failed": true, "msg": "invalid target state: %s"}' "$STATE"
+  exit 1
+fi
+
+# Return JSON with all information
+printf '{"changed": %s, "failed": %s, "rc": %s, "msg": "%s", "state": "%s"}' "$CHANGED" "$FAILED" "$RC" "$MSG" "$CSTATE"
+
+exit 0
