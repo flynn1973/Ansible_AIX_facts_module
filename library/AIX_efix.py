@@ -100,10 +100,16 @@ msg:
     sample: ["INFO: removed efixes", ["IV80588s6a"]]
 changed:
     description: whether efixes changed or not
-    returned: allways
+    returned: always
     type: boolean
     sample: False
-
+warnings:
+    description: if the Prerequisites fail for an efix, a warning is generated
+    returned: on warnings
+    type: list
+    sample: [ "WARNING: Prerequsites Failed for efix: IV92240m3a ",
+              "WARNING: Prerequsites Failed for efix: IV91951m3a "
+                ]
 '''
 
 # Import necessary libraries
@@ -246,12 +252,17 @@ def install_efixes(module, path, list):
             (rc, out, err) = module.run_command(
                 "%s %s %s" % (emgr, params, efixfile))
             if rc != 0:
-                nfs_umount(module, path)
-                msg = "ERROR: could not install efix: " + efixfile + " " + err
-                module.fail_json(
-                    msg=msg,
-                    err=err,
-                    rc=rc)
+                if 'Prerequisite' in err:
+                    module.warnings.append(
+                        'WARNING: Prerequsites Failed for efix: %s ' %
+                        (efix))
+                else:
+                    nfs_umount(module, path)
+                    msg = "ERROR: could not install efix: " + efixfile + " " + err
+                    module.fail_json(
+                        msg=msg,
+                        err=err,
+                        rc=rc)
             else:
                 changed = True
                 msg = ['INFO: installed efixes', list]
@@ -275,10 +286,12 @@ def main():
         supports_check_mode=True,
     )
 
+    module.warnings = []
     result = {
         'name': module.params['name'],
         'changed': False,
-        'msg': []
+        'msg': [],
+        'warnings': module.warnings
     }
 
     # findout which efixes are installed
@@ -355,6 +368,8 @@ def main():
             # efix in the share but not at the system must be installed
             efixes2remove = []
             efixes2install = []
+	    rchanged = False
+	    ichanged = False
             for efix in efixesinstalled:
                 if efix not in efixesatshare:
                     efixes2remove.append(efix)
@@ -363,13 +378,14 @@ def main():
                     efixes2install.append(efix)
             # remove the filesets
             if len(efixes2remove) != 0:
-                (result['changed'], result['msg']) = remove_efixes(
+                (rchanged, result['msg']) = remove_efixes(
                     module, efixes2remove)
             # install the filesets
             if len(efixes2install) != 0:
-                (result['changed'], resultmsg2add) = install_efixes(
+                (ichanged, resultmsg2add) = install_efixes(
                     module, mountpath, efixes2install)
                 result['msg'].append(resultmsg2add)
+	    result['changed'] = rchanged or ichanged
             # finnished installing efixes, unmounting the share
             nfs_umount(module, mountpath)
 
